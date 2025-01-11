@@ -43,6 +43,7 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.math.abs
+import kotlin.math.ceil
 
 object BangumiPlayUrlHook {
     private const val PGC_ANY_MODEL_TYPE_URL =
@@ -134,6 +135,8 @@ object BangumiPlayUrlHook {
             req.vod.cid = 0L
             req.vod.aid = 0L
         }
+        if (isDownloadUnite)
+            tryFixAidThailandRequest(req)
     }
 
     @JvmStatic
@@ -173,7 +176,9 @@ object BangumiPlayUrlHook {
             }
         } else if (error == null && allowDownloadPGC) {
             return fixDownloadProto(response)
-        } else if (error == null && (Settings.BlockBangumiPageAds() || Settings.RemoveCmdDms())) {
+        } else if (error == null && (Settings.BlockBangumiPageAds()
+                    || Settings.RemoveVideoPopups().contains("other"))
+        ) {
             return purifyViewInfo(response)
         }
         if (error != null) throw error else return reply
@@ -201,23 +206,44 @@ object BangumiPlayUrlHook {
             throw error
         hookPlayViewUniteAfterExtraActions(reply)
         var finalError = error
-        val response = reply ?: tryFixAidPGC(req, error)
+        val response = reply ?: tryFixAidPGC(isDownloadUnite, req, error)
             ?.also { finalError = null } ?: PlayViewUniteReply()
         fixDefaultQuality(finalError, req, response)
         val supplementAny = response.supplement
         val typeUrl = supplementAny.typeUrl
         // Only handle pgc video
         if (reply != null && typeUrl != PGC_ANY_MODEL_TYPE_URL)
-            finalError?.let { throw it } ?: return reply
+            finalError?.let { throw it } ?: run {
+                if (allowDownloadUnite)
+                    return fixDownloadProtoUnite(response)
+                syncVideoHistoryIfNeeded(req, response)
+                return response
+            }
         val extraContent = req.extraContentMap
-        val reqEpId = extraContent.getOrDefault("ep_id", "0").toLong()
-        val seasonId = extraContent.getOrDefault("season_id", "0").toLong()
+        var reqEpId = extraContent.getOrDefault("ep_id", "0").toLong()
+        var seasonId = extraContent.getOrDefault("season_id", "0").toLong()
             .takeIf { it != 0L } ?: bangumiInfoCache.firstNotNullOfOrNull {
             if (it.value.keys.contains(reqEpId)) it.key else null
         } ?: VideoInfoHolder.currentSeason()?.id ?: 0L
-        if (seasonId == 0L && reqEpId == 0L)
-            finalError?.let { throw it } ?: return reply
+        if (req.bvid.isEmpty() && req.vod.aid == 0L && seasonId == 0L && reqEpId == 0L)
+            finalError?.let { throw it } ?: run {
+                if (allowDownloadUnite)
+                    return fixDownloadProtoUnite(response)
+                syncVideoHistoryIfNeeded(req, response)
+                return response
+            }
         val supplement = PlayViewReply.parseFrom(supplementAny.value.toByteArray())
+        if (seasonId == 0L && reqEpId == 0L) {
+            reqEpId = supplement.business.episodeInfo.epId.toLong()
+            seasonId = supplement.business.episodeInfo.seasonInfo.seasonId.toLong()
+            if (seasonId == 0L && reqEpId == 0L)
+                finalError?.let { throw it } ?: run {
+                    if (allowDownloadUnite)
+                        return fixDownloadProtoUnite(response)
+                    syncVideoHistoryIfNeeded(req, response)
+                    return response
+                }
+        }
         if (Settings.UnlockAreaLimit() && needProxyUnite(response, supplement)) {
             return try {
                 val (thaiSeason, thaiEp) = getThaiSeason(seasonId, reqEpId)
@@ -234,7 +260,7 @@ object BangumiPlayUrlHook {
                 } else {
                     reconstructResponseUnite(
                         req, response, supplement, content, allowDownloadUnite, thaiSeason, thaiEp
-                    )
+                    ).also { syncVideoHistoryIfNeeded(req, it) }
                 }
             } catch (e: CustomServerException) {
                 showPlayerErrorUnite(
@@ -245,24 +271,170 @@ object BangumiPlayUrlHook {
             if (allowDownloadUnite)
                 return fixDownloadProtoUnite(response)
             var newReply = response
-            if (Settings.BlockBangumiPageAds() || Settings.RemoveCmdDms())
+            syncVideoHistoryIfNeeded(req, newReply)
+            if (Settings.BlockBangumiPageAds() || Settings.RemoveVideoPopups().contains("other"))
                 newReply = purifyViewInfoUnite(newReply, supplement)
             return newReply
         }
         finalError?.let { throw it } ?: return reply
     }
 
-    private fun tryFixAidPGC(req: PlayViewUniteReq, error: MossException?): PlayViewUniteReply? {
+    private fun syncVideoHistoryIfNeeded(req: PlayViewUniteReq, reply: PlayViewUniteReply?) {
+        reply ?: return
+        if (isDownloadUnite) return
+        val accessKeyMain = Settings.AccessKeyMain()
+        if (accessKeyMain.isEmpty() || accessKeyMain == Accounts.accessKey)
+            return
+        val videoType = reply.playArc.videoType
+        if (videoType != BizType.BIZ_TYPE_UGC && videoType != BizType.BIZ_TYPE_PGC)
+            return
+        if (videoType == BizType.BIZ_TYPE_PGC
+            && maybeThailand(reply.playArc.aid.toString(), reply.playArc.cid.toString())
+        ) return
+        val toastWithoutTime = Toast().apply {
+            button = Button().apply { text = "跳转播放" }
+            text = "你有最近观看的进度 "
+        }
+        if (videoType == BizType.BIZ_TYPE_UGC) {
+            val viewReply = com.bapis.bilibili.app.view.v1.ViewMoss().runCatchingOrNull {
+                view(com.bapis.bilibili.app.view.v1.ViewReq().apply {
+                    aid = req.vod.aid
+                    bvid = req.bvid
+                    fnval = req.vod.fnval
+                    fnver = req.vod.fnver
+                    forceHost = req.vod.forceHost
+                    fourk = if (req.vod.fourk) 1 else 0
+                    qn = req.vod.qn.toInt()
+                })
+            } ?: return
+            if (!viewReply.hasHistory()) return
+            val history = viewReply.history
+            reply.history = History().apply {
+                if (history.cid == reply.playArc.cid) {
+                    currentVideo = HistoryInfo().apply {
+                        lastPlayAid = reply.playArc.aid
+                        lastPlayCid = reply.playArc.cid
+                        progress = history.progress
+                        if (progress != -1L) {
+                            this.toastWithoutTime = toastWithoutTime
+                            toast = Toast().apply {
+                                button = Button()
+                                text = "已为您定位至上次观看位置"
+                            }
+                        }
+                    }
+                } else {
+                    val lastTitle = viewReply.pagesList.firstNotNullOfOrNull {
+                        if (it.page.cid == history.cid) it.page.part else null
+                    }.orEmpty()
+                    relatedVideo = HistoryInfo().apply {
+                        lastPlayAid = reply.playArc.aid
+                        lastPlayCid = history.cid
+                        progress = history.progress
+                        if (progress != -1L) {
+                            this.toastWithoutTime = toastWithoutTime
+                            toast = Toast().apply {
+                                button = Button().apply { text = "跳转播放" }
+                                text = "上次看到$lastTitle ${progress.secondFormat()} "
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            val playViewReply = PlayURLMoss().runCatchingOrNull {
+                playView(PlayViewReq().apply {
+                    dataControl = DataControl().apply {
+                        needWatchProgress = true
+                    }
+                    epId = req.extraContentMap.getOrDefault("ep_id", "0").toLong()
+                    seasonId = req.extraContentMap.getOrDefault("season_id", "0").toLong()
+                    fnval = req.vod.fnval
+                    fourk = req.vod.fourk
+                    fnver = req.vod.fnver
+                    forceHost = req.vod.forceHost
+                    qn = req.vod.qn
+                    preferCodecType = com.bapis.bilibili.pgc.gateway.player.v2.CodeType.CODE265
+                    isNeedViewInfo = true
+                    fromSpmid = "main.my-history.0.0"
+                    securityLevel = SecurityLevel.LEVEL_L1
+                    spmid = "pgc.pgc-video-detail.0.0"
+                })
+            } ?: return
+            val userStatus = playViewReply.business.userStatus
+            val current = if (userStatus.hasAidWatchProgress()) userStatus.aidWatchProgress else null
+            val last = if (userStatus.hasWatchProgress()) userStatus.watchProgress else null
+            reply.history = History().apply {
+                if (current != null) {
+                    currentVideo = HistoryInfo().apply {
+                        lastPlayAid = current.lastPlayAid
+                        lastPlayCid = current.lastPlayCid
+                        progress = current.progress
+                        if (progress != -1L) {
+                            this.toastWithoutTime = toastWithoutTime
+                            toast = Toast().apply {
+                                button = Button()
+                                text = current.toast.toastText.text
+                            }
+                        }
+                    }
+                }
+                if (last != null) {
+                    relatedVideo = HistoryInfo().apply {
+                        lastPlayAid = last.lastPlayAid
+                        lastPlayCid = last.lastPlayCid
+                        progress = last.progress
+                        if (progress != -1L) {
+                            this.toastWithoutTime = toastWithoutTime
+                            toast = Toast().apply {
+                                button = Button().apply { text = last.toast.button.text }
+                                text = last.toast.toastText.text
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 主要用于修复8.4.0+版本泰区番剧下载
+    private fun tryFixAidThailandRequest(req: PlayViewUniteReq) {
+        if (!Settings.UnlockAreaLimit())
+            return
+        if (req.extraContentMap.any { it.key == "season_id" || it.key == "ep_id" })
+            return
+        val reqAid = req.vod.aid.toString()
+        val reqCid = req.vod.cid.toString()
+        if (reqAid == "0" && reqCid == "0")
+            return
+        if (maybeThailand(reqAid, reqCid)) {
+            req.vod.aid = 0L
+            req.vod.cid = 0L
+            req.mutableExtraContentMap.apply {
+                put("season_id", reqAid)
+                put("ep_id", reqCid)
+            }
+        }
+    }
+
+    private fun tryFixAidPGC(
+        isDownload: Boolean,
+        req: PlayViewUniteReq,
+        error: MossException?
+    ): PlayViewUniteReply? {
         if (!Settings.UnlockAreaLimit())
             return null
         if (error == null || error !is BusinessException || error.code != 6002003/* 抱歉您所在地区不可观看！*/)
             return null
         val aid = req.vod.aid
-        if (aid == 0L) return null
-        if (req.extraContentMap.any { it.key == "season_id" } || req.extraContentMap.any { it.key == "ep_id" })
+        val bvid = req.bvid
+        if (aid == 0L && bvid.isEmpty())
+            return null
+        if (req.extraContentMap.any { it.key == "season_id" || it.key == "ep_id" })
             return null
         val viewReq = ViewReq().apply {
             this.aid = aid
+            this.bvid = bvid
             this.playerArgs = PlayerArgs().apply {
                 fnval = req.vod.fnval.toLong()
                 fnver = req.vod.fnver.toLong()
@@ -278,10 +450,11 @@ object BangumiPlayUrlHook {
             return null
         val viewPgcAny = ViewPgcAny.parseFrom(supplement.value)
         val seasonId = viewPgcAny.ogvData.seasonId
+        val reqCid = req.vod.cid.let { if (it == 0L) viewReply.arc.cid else it }
         val epId = viewReply.tab.tabModuleList.find { it.hasIntroduction() }
             ?.introduction?.modulesList?.asSequence()?.filter { it.hasSectionData() }
             ?.flatMap { it.sectionData.episodesList }
-            ?.find { it.cid == viewReply.arc.cid }?.epId
+            ?.find { it.cid == reqCid }?.epId
         req.mutableExtraContentMap["season_id"] = seasonId.toString()
         epId?.let { req.mutableExtraContentMap["ep_id"] = it.toString() }
         val newReq = PlayViewUniteReq().apply {
@@ -302,6 +475,8 @@ object BangumiPlayUrlHook {
                 preferCodecType = req.vod.preferCodecType
                 qn = req.vod.qn
                 voiceBalance = req.vod.voiceBalance
+                if (isDownload)
+                    download = 1
             }
         }
         return PlayerMoss().runCatchingOrNull { playViewUnite(newReq) }
@@ -337,7 +512,7 @@ object BangumiPlayUrlHook {
         if (!isDownloadUnite && !Accounts.isEffectiveVip
             && Settings.TrialVipQuality()
         ) TrialQualityPatch.makeVipFree(playReply)
-        if (Settings.RemoveCmdDms()) {
+        if (Settings.RemoveVideoPopups().contains("other")) {
             playReply.viewInfo.toastsList.withIndex().filter { (_, toast) ->
                 toast.type == ToastType.VIP_DEFINITION_REMIND || toast.type == ToastType.VIP_CONTENT_REMIND
             }.map { it.index }.asReversed().forEach {
@@ -425,7 +600,7 @@ object BangumiPlayUrlHook {
     }
 
     private fun fixDownloadProtoUnite(response: PlayViewUniteReply) = response.apply {
-        val videoInfo = VideoInfo.parseFrom(response.toByteArray()).apply { fixDownloadProto() }
+        val videoInfo = VideoInfo.parseFrom(response.vodInfo.toByteArray()).apply { fixDownloadProto() }
         vodInfo = VodInfo.parseFrom(videoInfo.toByteArray())
     }
 
@@ -448,8 +623,8 @@ object BangumiPlayUrlHook {
                 mutableExtToastMap.clear()
             }
         }
-        if (Settings.RemoveCmdDms())
-            business.clearRecordInfo()
+        if (Settings.RemoveVideoPopups().contains("other"))
+            business.clearRecordInfo() // 番剧登记号
     }
 
     private fun purifyViewInfoUnite(
@@ -648,11 +823,12 @@ object BangumiPlayUrlHook {
                         }
                     }
                     val timeLength = jsonContent.optLong("timelength")
+                    val durationS = ceil(timeLength / 1000.0).toLong()
                     runCatchingOrNull {
-                        watchTimeLength = timeLength
-                        durationMs = timeLength % 1000
+                        watchTimeLength = durationS * 1000
+                        durationMs = timeLength
                     }
-                    duration = timeLength / 1000
+                    duration = durationS
                 }
             }
             val newSupplement = supplement.apply {
@@ -812,18 +988,20 @@ object BangumiPlayUrlHook {
                 }
             }
         }
-        val audio = (dashAudioList.find {
-            it.id == audioId
-        } ?: dashAudioList.first()).let { a ->
-            if (checkBaseUrl) a.apply {
-                if (!checkConnection(baseUrl))
-                    backupUrlList.find(checkConnection)?.let {
-                        baseUrl = it
-                    }
-            } else a
+        if (dashAudioList.isNotEmpty()) {
+            val audio = (dashAudioList.find {
+                it.id == audioId
+            } ?: dashAudioList.first()).let { a ->
+                if (checkBaseUrl) a.apply {
+                    if (!checkConnection(baseUrl))
+                        backupUrlList.find(checkConnection)?.let {
+                            baseUrl = it
+                        }
+                } else a
+            }
+            clearDashAudio()
+            addDashAudio(audio)
         }
-        clearDashAudio()
-        addDashAudio(audio)
     }
 
     private fun getHistory(
@@ -995,9 +1173,10 @@ object BangumiPlayUrlHook {
                     }
                 }
                 val timeLength = jsonContent.optInt("timelength")
-                epWholeDuration = timeLength
+                val durationMs = ceil(timeLength / 1000.0).toInt() * 1000
+                epWholeDuration = durationMs
                 runCatchingOrNull {
-                    watchTimeLength = timeLength.toLong()
+                    watchTimeLength = durationMs.toLong()
                 }
                 if (Settings.AllowMiniPlay())
                     inlineType = InlineType.TYPE_WHOLE

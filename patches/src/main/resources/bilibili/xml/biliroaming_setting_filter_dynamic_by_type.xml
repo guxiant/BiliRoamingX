@@ -5,7 +5,7 @@
         android:key="customize_dynamic_type"
         android:layout="@layout/bili_app_layout_preference_category_title"
         android:persistent="true"
-        android:title="@string/biliroaming_filter_dynamic_by_type_hint"
+        android:title="@string/biliroaming_filter_by_type_hint"
         android:entries="@array/biliroaming_dynamic_type_entries"
         android:entryValues="@array/biliroaming_dynamic_type_values"
         app:radioEntrySummaries="@array/biliroaming_dynamic_type_summaries"

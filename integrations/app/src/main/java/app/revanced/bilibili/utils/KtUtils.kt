@@ -27,6 +27,7 @@ import app.revanced.bilibili.account.Accounts
 import app.revanced.bilibili.meta.Client
 import app.revanced.bilibili.meta.VideoHistory
 import app.revanced.bilibili.patches.main.ApplicationDelegate
+import app.revanced.bilibili.patches.okhttp.BangumiSeasonHook.seasonAreasCache
 import app.revanced.bilibili.settings.ModulePreferenceManager
 import app.revanced.bilibili.settings.Settings
 import com.bapis.bilibili.metadata.Metadata
@@ -41,6 +42,9 @@ import org.json.JSONObject
 import java.io.*
 import java.lang.reflect.Proxy
 import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.TreeMap
 import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
@@ -150,9 +154,8 @@ val area: Area?
         null
     }
 
-@Suppress("DEPRECATION")
 val versionName: String by lazy {
-    Utils.getContext().packageManager.getPackageInfo(Utils.getContext().packageName, 0).versionName
+    Utils.getContext().packageManager.getPackageInfo(Utils.getContext().packageName, 0).versionName.orEmpty()
 }
 
 @Suppress("DEPRECATION")
@@ -262,7 +265,7 @@ fun checkErrorToast(json: JSONObject, isCustomServer: Boolean = false) {
 }
 
 val cachePrefs: SharedPreferences by lazy {
-    Utils.getContext().getSharedPreferences("biliroaming_cache", Context.MODE_PRIVATE)
+    Utils.blkvPrefsByName("biliroaming_cache", true)
 }
 
 val abPrefs by lazy {
@@ -279,7 +282,7 @@ val storyPrefs by lazy {
     Utils.blkvPrefsByName("bilistory", true)
 }
 
-private val vhPrefs: SharedPreferences by lazy {
+val vhPrefs: SharedPreferences by lazy {
     Utils.getContext().getSharedPreferences(Constants.PREFS_VH, Context.MODE_PRIVATE)
 }
 
@@ -338,7 +341,7 @@ inline fun SparseArray<Any>.toUnknownFields(original: UnknownFieldSetLite? = nul
     return GeneratedMessageLiteEx.newUnknownFields(original, this)
 }
 
-val defaultUA = "Mozilla/5.0 BiliDroid/$versionName (bbcallen@gmail.com)"
+val defaultUA by lazy { "Mozilla/5.0 BiliDroid/$versionName (bbcallen@gmail.com)" }
 
 val browserUA =
     "Mozilla/5.0 (Linux; Android ${Build.VERSION.RELEASE}; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -346,14 +349,14 @@ val browserUA =
 @Suppress("DEPRECATION")
 fun sigMd5(packageName: String = Utils.getContext().packageName, preferOriginal: Boolean = true): String {
     val signBase64 = if (preferOriginal) {
-        val sign = ApplicationDelegate.originalSignatures[packageName]
+        val sign = ApplicationDelegate.originalSignatures()[packageName]
         if (sign == null)
             Utils.getContext().packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNATURES)
-        ApplicationDelegate.originalSignatures[packageName]
+        ApplicationDelegate.originalSignatures()[packageName]
     } else null
     return if (signBase64 == null) {
         Utils.getContext().packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNATURES)
-            .signatures.first().toByteArray().md5Hex
+            .signatures.orEmpty().first().toByteArray().md5Hex
     } else {
         Base64.decode(signBase64, Base64.DEFAULT).md5Hex
     }
@@ -673,7 +676,6 @@ inline fun <reified T : MessageLite> getDeviceSetting(): T? {
     return getDeviceSetting(T::class.java)
 }
 
-@Suppress("UNCHECKED_CAST")
 fun <T : MessageLite> getDeviceSetting(typeClass: Class<T>): T? {
     val context = Utils.getContext()
     val callUri = "content://${context.packageName}.device.settings.DeviceSettingProvider/call"
@@ -710,10 +712,12 @@ val Fragment.hostContext inline get() = context!!
 inline fun <T> unsafeLazy(noinline initializer: () -> T) =
     lazy(LazyThreadSafetyMode.NONE, initializer)
 
-val jsonFormat = Json {
-    ignoreUnknownKeys = true
-    coerceInputValues = true
-    useAlternativeNames = false
+val jsonFormat by lazy {
+    Json {
+        ignoreUnknownKeys = true
+        coerceInputValues = true
+        useAlternativeNames = false
+    }
 }
 
 inline fun <reified T> String.fromJson(json: Json = jsonFormat) =
@@ -745,6 +749,7 @@ fun deleteModuleResources() {
     } catch (t: Throwable) {
         Logger.error(t) { "Failed to delete module resources." }
     }
+    Utils.blkvPrefsByName("small_app_sp_apps_conf", true).edit { clear() }
 }
 
 fun deleteTopActivityEntrance() {
@@ -760,3 +765,36 @@ val isAppArch64: Boolean
         .let { it == "arm64" || it == "x86_64" }
 
 val isPrebuilt inline get() = sigMd5() == Constants.PRE_BUILD_SIG_MD5
+
+fun maybeThailand(sid: String, epId: String = ""): Boolean {
+    val seasonAreasCache = seasonAreasCache
+    val epCacheId = "ep$epId"
+    return Area.Thailand.let { it == seasonAreasCache[sid] || it == seasonAreasCache[epCacheId] }
+            || cachePrefs.contains(sid) && Area.Thailand.value == cachePrefs.getString(sid, null)
+            || cachePrefs.contains(epCacheId) && Area.Thailand.value == cachePrefs.getString(epCacheId, null)
+}
+
+fun Date.format(pattern: String = "yyyy-MM-dd HH:mm:ss"): String {
+    return SimpleDateFormat(pattern, Locale.getDefault()).format(this)
+}
+
+fun getFinalAccessKey(thailand: Boolean) = if (thailand) {
+    Settings.AccessKeyThailand().ifEmpty { Accounts.accessKey }
+} else {
+    Settings.AccessKeyMain().ifEmpty { Accounts.accessKey }
+}
+
+inline fun <reified T> Context.requireSystemService(): T = getSystemService(T::class.java)
+
+inline val String.safeContent: String
+    get() = Accounts.accessKey.let {
+        if (it.isNotEmpty() && isNotEmpty()) replace(it, "114514") else it
+    }
+
+inline fun <T> List<T>.forEachIndexedReversed(action: (index: Int, T) -> Unit) {
+    var index = size - 1
+    while (index >= 0) {
+        action(index, this[index])
+        index--
+    }
+}

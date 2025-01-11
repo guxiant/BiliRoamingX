@@ -15,6 +15,7 @@ import app.revanced.bilibili.patches.SubtitleImportSavePatch.HookInfo.getDanmaku
 import app.revanced.bilibili.patches.SubtitleImportSavePatch.HookInfo.getDmViewReplyMethod
 import app.revanced.bilibili.patches.SubtitleImportSavePatch.HookInfo.hideWidgetMethod
 import app.revanced.bilibili.patches.SubtitleImportSavePatch.HookInfo.loadSubtitleMethod
+import app.revanced.bilibili.patches.SubtitleImportSavePatch.HookInfo.recordSelectedSubtitleMethod
 import app.revanced.bilibili.patches.SubtitleImportSavePatch.HookInfo.setDmViewReplyMethod
 import app.revanced.bilibili.patches.SubtitleImportSavePatch.HookInfo.widgetTokenField
 import app.revanced.bilibili.patches.main.VideoInfoHolder
@@ -57,8 +58,8 @@ object SubtitleImportSavePatch {
     @JvmStatic
     @SuppressLint("InlinedApi")
     fun onCreateSubtitleWidget(widget: Any, view: View) {
-        val importButton = view.findView<View>("biliroaming_import_subtitle")
-        val saveButton = view.findView<View>("biliroaming_save_subtitle")
+        val importButton = view.findView<View?>("biliroaming_import_subtitle") ?: return
+        val saveButton = view.findView<View?>("biliroaming_save_subtitle") ?: return
         if (!Settings.SubtitleImportSave()) {
             importButton.hide()
             saveButton.hide()
@@ -66,10 +67,10 @@ object SubtitleImportSavePatch {
         }
         importButton.show()
         saveButton.show()
-        val interactLayerService = widget.getObjectField(
+        val interactLayerService = widget.getField(
             "interactLayerServiceForBiliRoaming"
         ) ?: return
-        val widgetService = widget.getObjectField(
+        val widgetService = widget.getField(
             "widgetServiceForBiliRoaming"
         ) ?: return
         importButton.onClick { button ->
@@ -109,7 +110,8 @@ object SubtitleImportSavePatch {
                 subtitle.addSubtitles(newSubtitle)
                 interactLayerService.callMethod(setDmViewReplyMethod, newDmViewReply)
                 interactLayerService.callMethod(loadSubtitleMethod, newSubtitle, null)
-                widgetService.callMethod(hideWidgetMethod, widget.getObjectField(widgetTokenField))
+                interactLayerService.callMethod(recordSelectedSubtitleMethod, false)
+                widgetService.callMethod(hideWidgetMethod, widget.getField(widgetTokenField))
                 Utils.runOnMainThread(800L) {
                     val gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
                     Toasts.showShortWithId("biliroaming_subtitle_import_success", gravity = gravity)
@@ -137,7 +139,7 @@ object SubtitleImportSavePatch {
                     }
                 }
             }
-            widgetService.callMethod(hideWidgetMethod, widget.getObjectField(widgetTokenField))
+            widgetService.callMethod(hideWidgetMethod, widget.getField(widgetTokenField))
         }
     }
 
@@ -218,6 +220,10 @@ object SubtitleImportSavePatch {
 
         @Keep
         @JvmStatic
+        var recordSelectedSubtitleMethod = ""
+
+        @Keep
+        @JvmStatic
         var hideWidgetMethod = ""
 
         @Keep
@@ -230,7 +236,9 @@ object SubtitleImportSavePatch {
 
         @Keep
         @JvmStatic
-        private fun init() {
+        private fun init(): Int {
+            // keep one register
+            return 0
         }
     }
 }

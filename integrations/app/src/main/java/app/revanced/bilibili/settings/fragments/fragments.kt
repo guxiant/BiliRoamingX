@@ -7,9 +7,6 @@ import app.revanced.bilibili.settings.search.annotation.SettingFragment
 @SettingFragment("biliroaming_setting_block_follow")
 class BlockFollowFragment : BiliRoamingBaseSettingFragment()
 
-@SettingFragment("biliroaming_setting_block_module")
-class BlockModuleFragment : BiliRoamingBaseSettingFragment()
-
 @SettingFragment("biliroaming_setting_customize_bottom")
 class CustomizeBottomFragment :
     BaseDynamicItemsFragment(Settings.ShowingBottomItems, JSONPatch.bottomItems)
@@ -44,8 +41,8 @@ class FilterHomeRcmdByTypeFragment : BiliRoamingBaseSettingFragment()
 @SettingFragment("biliroaming_setting_filter_search_type")
 class FilterSearchTypeFragment : BiliRoamingBaseSettingFragment()
 
-@SettingFragment("biliroaming_setting_filter_story")
-class FilterStoryFragment : BiliRoamingBaseSettingFragment()
+@SettingFragment("biliroaming_setting_filter_story_by_type")
+class FilterStoryByTypeFragment : BiliRoamingBaseSettingFragment()
 
 @SettingFragment("biliroaming_setting_full_screen_quality_mobile")
 class FullScreenQualityMobileSettingFragment : BiliRoamingBaseSettingFragment()
@@ -73,3 +70,12 @@ class UposSettingFragment : BiliRoamingBaseSettingFragment()
 
 @SettingFragment("biliroaming_setting_story_ui_style")
 class StoryUIStyleFragment : BiliRoamingBaseSettingFragment()
+
+@SettingFragment("biliroaming_setting_cover_ratio")
+class PegasusCoverRatioFragment : BiliRoamingBaseSettingFragment()
+
+@SettingFragment("biliroaming_setting_video_popups")
+class RemoveVideoPopupsFragment : BiliRoamingBaseSettingFragment()
+
+@SettingFragment("biliroaming_setting_purify_search_types")
+class PurifySearchTypesFragment : BiliRoamingBaseSettingFragment()

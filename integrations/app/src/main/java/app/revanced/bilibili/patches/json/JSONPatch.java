@@ -9,6 +9,7 @@ import com.bilibili.ad.adview.videodetail.danmakuv2.model.Dm;
 import com.bilibili.ad.adview.videodetail.danmakuv2.model.DmAdvert;
 import com.bilibili.app.authorspace.api.BiliSpace;
 import com.bilibili.app.comm.list.widget.recommend.RecommendModeGuidanceConfig;
+import com.bilibili.app.gemini.ugc.feature.share.ShareIconResult;
 import com.bilibili.bililive.room.biz.reverse.bean.LiveRoomReserveInfo;
 import com.bilibili.bililive.room.biz.shopping.beans.LiveGoodsCardInfo;
 import com.bilibili.bililive.room.biz.shopping.beans.LiveShoppingGotoBuyInfo;
@@ -16,6 +17,7 @@ import com.bilibili.bililive.room.biz.shopping.beans.LiveShoppingInfo;
 import com.bilibili.bililive.room.biz.shopping.beans.LiveShoppingRecommendCardGoodsDetail;
 import com.bilibili.bililive.videoliveplayer.net.beans.attentioncard.LiveRoomRecommendCard;
 import com.bilibili.bililive.videoliveplayer.net.beans.gateway.roominfo.BiliLiveRoomInfo;
+import com.bilibili.bililive.videoliveplayer.net.beans.gateway.roominfo.LiveRoomDanmakuVoteCardInfo;
 import com.bilibili.bililive.videoliveplayer.net.beans.gateway.userinfo.BiliLiveRoomUserInfo;
 import com.bilibili.bililive.videoliveplayer.net.beans.gateway.userinfo.FunctionCard;
 import com.bilibili.bililive.videoliveplayer.net.beans.giftpendant.LiveGiftPendantInfo;
@@ -23,16 +25,11 @@ import com.bilibili.lib.homepage.mine.MenuGroup;
 import com.bilibili.okretro.GeneralResponse;
 import com.bilibili.pegasus.api.model.ChannelTabV2;
 import com.bilibili.pegasus.api.model.ChannelV2;
-import com.bilibili.search.api.DefaultKeyword;
-import com.bilibili.search.api.SearchRank;
-import com.bilibili.search.api.SearchReferral;
-import com.bilibili.video.story.StoryDetail;
 import com.bilibili.video.story.api.StoryFeedResponse;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -76,15 +73,30 @@ public class JSONPatch {
 
     @Keep
     public static Object parseObjectHook(Object obj) {
+        try {
+            return parseObjectHookInternal(obj);
+        } catch (Throwable t) {
+            Logger.error(t, () -> "JSONPatch, parse object hook error");
+            throw t;
+        }
+    }
+
+    private static Object parseObjectHookInternal(Object obj) {
         Object data = (obj instanceof GeneralResponse<?> resp) ? resp.data : obj;
         if (data instanceof SplashData splashData) {
-            if (Settings.PurifySplash.get()) {
+            if (Settings.PurifySplash.get()) try {
                 splashData.splashList.clear();
                 splashData.strategyList.clear();
+            } catch (Throwable ignored) {
+                splashData.getSplashList().clear();
+                splashData.getStrategyList().clear();
             }
         } else if (data instanceof SplashShowData showData) {
-            if (Settings.PurifySplash.get())
+            if (Settings.PurifySplash.get()) try {
                 showData.strategyList.clear();
+            } catch (Throwable ignored) {
+                showData.getStrategyList().clear();
+            }
         } else if (data instanceof EventEntranceModel) {
             if (Settings.PurifyGame.get()) {
                 // no problem, see com.bilibili.okretro.BiliApiDataCallback
@@ -106,17 +118,27 @@ public class JSONPatch {
                 return null;
         } else if (data instanceof BiliLiveRoomInfo roomInfo) {
             Set<? extends String> keys = Settings.PurifyLivePopups.get();
+            BiliLiveRoomInfo.FunctionCard card = roomInfo.functionCard;
             if (keys.contains("follow")) {
-                BiliLiveRoomInfo.FunctionCard card = roomInfo.functionCard;
                 if (card != null)
                     card.followCard = null;
             }
+            if (keys.contains("wish")) try {
+                if (card != null)
+                    card.wishlistCard = null;
+            } catch (Throwable ignored) {
+            }
             if (keys.contains("banner"))
                 roomInfo.bannerInfo = null;
-            if (keys.contains("giftStar")) {
+            if (keys.contains("giftStar")) try {
                 LiveGiftPendantInfo pendantInfo = roomInfo.revenueGiftPendantInfo;
                 if (pendantInfo != null)
                     pendantInfo.liveGiftStarPendantInfo = null;
+            } catch (Throwable ignored) {
+            }
+            if (keys.contains("plusOne")) try {
+                roomInfo.dmComboInfo = null;
+            } catch (Throwable ignored) {
             }
             if (Settings.RemoveLiveMask.get()) try {
                 roomInfo.areaMaskInfo = null;
@@ -126,6 +148,10 @@ public class JSONPatch {
                 Map<String, Object> newSwitchInfo = roomInfo.newSwitchInfo;
                 if (newSwitchInfo != null)
                     newSwitchInfo.put("room-player-watermark", 0);
+            }
+            if (Settings.LiveNoBlock.get()) try {
+                roomInfo.blockInfo = null;
+            } catch (Throwable ignored) {
             }
         } else if (data instanceof LiveRoomRecommendCard) {
             if (Settings.PurifyLivePopups.get().contains("follow"))
@@ -149,6 +175,10 @@ public class JSONPatch {
                 } catch (Throwable ignored) {
                 }
             }
+            if (keys.contains("qoe")) try {
+                info.qoe = null;
+            } catch (Throwable ignored) {
+            }
         } else if (data instanceof LiveShoppingGotoBuyInfo) {
             if (Settings.PurifyLivePopups.get().contains("gotoBuy"))
                 return null;
@@ -163,10 +193,7 @@ public class JSONPatch {
         } else if (!Utils.isHd() && data instanceof OgvApiResponseV2 ogvApiResponseV2) {
             unlockOgvResponseV2(ogvApiResponseV2);
         } else if (data instanceof StoryFeedResponse feedResponse) {
-            filterStory(feedResponse);
-        } else if ((!Versions.ge7_64_0() && (data instanceof SearchReferral || data instanceof DefaultKeyword)) || (Versions.ge7_39_0() && data instanceof com.bilibili.search2.api.SearchReferral)) {
-            if (Settings.PurifySearch.get())
-                return null;
+            PegasusPatch.filterStory(feedResponse);
         } else if (data instanceof EventSplashDataList splashList) {
             if (Settings.PurifySplash.get()) {
                 List<EventSplashData> eventList = splashList.getEventList();
@@ -199,17 +226,18 @@ public class JSONPatch {
                     }
                 }
             }
+        } else if ((!Utils.isHd() && data instanceof BiliLiveRoomInfo.DmComboInfo) || data instanceof LiveRoomDanmakuVoteCardInfo) {
+            if (Settings.PurifyLivePopups.get().contains("plusOne"))
+                return null;
+        } else if ((Utils.isHd() && data instanceof tv.danmaku.bili.videopage.player.features.share.ShareIconResult) || (!Utils.isHd() && data instanceof ShareIconResult)) {
+            // block share guide for old UGC player
+            return null;
         }
         return obj;
     }
 
     @Keep
     public static void parseArrayHook(Class<?> type, ArrayList<?> list) {
-        if ((!Versions.ge7_64_0() && (type == SearchRank.class || type == SearchReferral.Guess.class))
-                || (Versions.ge7_39_0() && (type == com.bilibili.search2.api.SearchRank.class || type == com.bilibili.search2.api.SearchReferral.Guess.class))) {
-            if (Settings.PurifySearch.get())
-                list.clear();
-        }
     }
 
     public static boolean shouldShowing(Set<? extends String> items, String item) {
@@ -511,8 +539,8 @@ public class JSONPatch {
                 case "article" -> space.article = null;
                 case "audio" -> space.audio = null;
                 case "season" -> space.season = null;
-                case "coinVideo" -> space.coinVideo = null;
-                case "recommendVideo" -> space.recommendVideo = null;
+                case "coinVideo" -> Reflex.setObjectField(space, "coinVideo", null);
+                case "recommendVideo" -> Reflex.setObjectField(space, "recommendVideo", null);
                 case "followComicList" -> space.followComicList = null;
                 case "spaceGame" -> space.spaceGame = null;
                 case "cheeseVideo" -> space.cheeseVideo = null;
@@ -523,6 +551,17 @@ public class JSONPatch {
                 case "contractResource" -> space.contractResource = null;
                 case "nftShowModule" -> space.nftShowModule = null;
             }
+        }
+        try {
+            if (space.buttonEntranceList != null) {
+                space.buttonEntranceList.removeIf(entrance -> {
+                    String moduleType = entrance.moduleType;
+                    return values.contains("chargeResult") && "charge".equals(moduleType)
+                            || values.contains("guard") && "navigation".equals(moduleType)
+                            || values.contains("adV2") && "goods".equals(moduleType);
+                });
+            }
+        } catch (NoSuchFieldError ignored) {
         }
     }
 
@@ -544,31 +583,5 @@ public class JSONPatch {
         if (params == null || params.isEmpty()) return;
         for (int i = 0; i < params.size(); i++)
             params.get(i).setPlayableType(0);
-    }
-
-    private static void filterStory(StoryFeedResponse storyFeedResponse) {
-        Set<? extends String> filters = Settings.FilterStory.get();
-        List<StoryDetail> items;
-        if (!filters.isEmpty() && (items = storyFeedResponse.getItems()) != null) {
-            Iterator<StoryDetail> it = items.iterator();
-            while (it.hasNext()) {
-                StoryDetail story = it.next();
-                if (Settings.RemoveChargeButton.get()) {
-                    StoryDetail.Owner owner = story.getOwner();
-                    if (owner != null) {
-                        StoryDetail.Charge charge = owner.getCharge();
-                        if (charge != null)
-                            charge.setShow(false);
-                    }
-                }
-                String aGoto = story.getGoto();
-                if (!TextUtils.isEmpty(aGoto))
-                    for (String filter : filters)
-                        if (aGoto.contains(filter)) {
-                            it.remove();
-                            break;
-                        }
-            }
-        }
     }
 }

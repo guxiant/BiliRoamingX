@@ -1,5 +1,7 @@
+import com.android.tools.build.apkzlib.zip.ZFile
+import org.gradle.internal.os.OperatingSystem
 import org.gradle.kotlin.dsl.support.listFilesOrdered
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.kotlin.jvm)
@@ -14,17 +16,6 @@ dependencies {
     implementation(libs.smali)
     // Used in JsonGenerator.
     implementation(libs.gson)
-}
-
-kotlin {
-    compilerOptions {
-        jvmTarget = JvmTarget.JVM_11
-    }
-}
-
-java {
-    sourceCompatibility = JavaVersion.VERSION_11
-    targetCompatibility = JavaVersion.VERSION_11
 }
 
 tasks.jar {
@@ -49,8 +40,14 @@ tasks.register("buildDexJar") {
     dependsOn(tasks.build)
 
     doLast {
-        val d8 = File(System.getenv("ANDROID_HOME")).resolve("build-tools")
-            .listFilesOrdered().last().resolve("d8").absolutePath
+        val d8Name = OperatingSystem.current().getScriptName("d8")
+        val sdkDir = System.getenv("ANDROID_HOME").orEmpty().ifEmpty {
+            rootProject.file("local.properties").takeIf { it.exists() }
+                ?.inputStream()?.let { Properties().apply { load(it) } }
+                ?.getProperty("sdk.dir")
+        }.orEmpty().ifEmpty { error("Android sdk not found.") }
+        val d8 = File(sdkDir).resolve("build-tools")
+            .listFilesOrdered().last().resolve(d8Name).absolutePath
 
         val patchesJar = configurations.archives.get().allArtifacts.files.files.first().absolutePath
         val workingDirectory = layout.buildDirectory.dir("libs").get().asFile
@@ -60,9 +57,8 @@ tasks.register("buildDexJar") {
             commandLine = listOf(d8, "--release", patchesJar)
         }
 
-        exec {
-            workingDir = workingDirectory
-            commandLine = listOf("zip", "-u", patchesJar, "classes.dex")
+        ZFile.openReadWrite(File(patchesJar)).use {
+            it.add("classes.dex", File(workingDirectory, "classes.dex").inputStream())
         }
     }
 }

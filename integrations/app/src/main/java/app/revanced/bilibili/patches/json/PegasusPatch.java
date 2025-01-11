@@ -16,6 +16,7 @@ import com.bapis.bilibili.app.viewunite.common.RelateCard;
 import com.bapis.bilibili.app.viewunite.common.RelateCardType;
 import com.bapis.bilibili.app.viewunite.common.Relates;
 import com.bapis.bilibili.playershared.BizType;
+import com.bilibili.adcommon.basic.model.FeedAdInfo;
 import com.bilibili.app.comm.list.common.api.model.PlayerArgs;
 import com.bilibili.app.comm.list.common.data.DislikeReason;
 import com.bilibili.app.comm.list.common.data.ThreePointItem;
@@ -23,6 +24,7 @@ import com.bilibili.okretro.GeneralResponse;
 import com.bilibili.pegasus.api.model.BasicIndexItem;
 import com.bilibili.pegasus.api.modelv2.Args;
 import com.bilibili.pegasus.api.modelv2.BannerItemV2;
+import com.bilibili.pegasus.api.modelv2.BasePlayerItem;
 import com.bilibili.pegasus.api.modelv2.Config;
 import com.bilibili.pegasus.api.modelv2.LargeCoverSingleV7Item;
 import com.bilibili.pegasus.api.modelv2.LargeCoverSingleV8Item;
@@ -37,6 +39,8 @@ import com.bilibili.pegasus.api.modelv2.SmallCoverV10Item;
 import com.bilibili.pegasus.api.modelv2.SmallCoverV2Item;
 import com.bilibili.pegasus.api.modelv2.SmallCoverV9Item;
 import com.bilibili.pegasus.api.modelv2.Tag;
+import com.bilibili.video.story.StoryDetail;
+import com.bilibili.video.story.api.StoryFeedResponse;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -91,7 +95,7 @@ public class PegasusPatch {
     };
 
     private static final Map<String, List<String>> filterTypesMap = Map.ofEntries(
-            Map.entry("advertisement", List.of("ad", "cm")),
+            Map.entry("advertisement", List.of("ad", "cm", "special_s")),
             Map.entry("article", List.of("article")),
             Map.entry("bangumi", List.of("bangumi", "special", "pgc")),
             Map.entry("game", List.of("game")),
@@ -103,6 +107,7 @@ public class PegasusPatch {
             Map.entry("notify", List.of("notify_tunnel")),
             Map.entry("course", List.of("ketang")),
             Map.entry("comic", List.of("comic")),
+            Map.entry("cannot_play", List.of("cannot_play")),
             Map.entry("large_cover", List.of("large_cover")),
             Map.entry("middle_cover", List.of("middle_cover")),
             Map.entry("small_cover", List.of("small_cover"))
@@ -753,7 +758,10 @@ public class PegasusPatch {
         return false;
     }
 
-    private static void disableAutoRefresh(Config config) {
+    private static void customPegasusConfig(Config config) {
+        float ratio = Float.parseFloat(Settings.PegasusCoverRatio.get());
+        if (config != null && ratio != 0f && !Utils.isHd())
+            config.smallCoverWhRatio = ratio;
         if (config == null || !shouldDisableAutoRefresh())
             return;
         if (Utils.isPink() || Utils.isBlue() || Utils.isPlay()) {
@@ -777,7 +785,7 @@ public class PegasusPatch {
     public static void pegasusHook(GeneralResponse<PegasusFeedResponse> response) {
         var data = response.data;
         if (data == null) return;
-        disableAutoRefresh(data.config);
+        customPegasusConfig(data.config);
         var items = data.items;
         if (items == null || items.isEmpty()) return;
         long playCountLimit = Settings.LowPlayCountLimit.get();
@@ -838,6 +846,10 @@ public class PegasusPatch {
                         || (!TextUtils.isEmpty(goTo) && goTo.contains(type))) {
                     typeMatched = true;
                     break;
+                } else if ("av".equals(cardGoto) && "cannot_play".equals(type)
+                        && (item instanceof BasePlayerItem playerItem) && playerItem.canPlay != 1) {
+                    typeMatched = true;
+                    break;
                 }
             }
             return typeMatched || isLowPlayCountVideo(item, playCountLimit)
@@ -849,11 +861,52 @@ public class PegasusPatch {
                     uidArray, categorySet, channelSet
             );
         });
+        int column = data.config != null ? data.config.column : 2;
+        align(items, column);
         items.forEach(PegasusPatch::appendReasons);
+    }
+
+    private static void align(ArrayList<BasicIndexItem> items, int column) {
+        if (Utils.isHd() || column % 2 != 0) return;
+        int smallCardCount = 0;
+        int lastSmallCardIndex = -1;
+        for (int i = items.size() - 1; i >= 0; i--) {
+            BasicIndexItem item = items.get(i);
+            String cardType = item.cardType;
+            if (cardType == null) cardType = "";
+            long adCardType = -1;
+            FeedAdInfo adInfo = item.adInfo;
+            if (adInfo != null)
+                adCardType = adInfo.getFeedInfoCardType();
+            boolean isLargeCard = isLargeCard(cardType, adCardType);
+            if (lastSmallCardIndex == -1 && !isLargeCard)
+                lastSmallCardIndex = i;
+            smallCardCount += (isLargeCard ? 2 : 1);
+        }
+        if (smallCardCount % 2 != 0)
+            items.remove(lastSmallCardIndex);
+    }
+
+    private static boolean isLargeCard(String cardType, long adCardType) {
+        return cardType.startsWith("banner_v8")
+                || cardType.startsWith("large_cover")
+                || cardType.startsWith("notify_tunnel")
+                || cardType.startsWith("select")
+                // see com.bilibili.ad.adview.pegasus.holders.AdHolders
+                || (cardType.startsWith("cm")
+                && (adCardType == 27 || adCardType == 41 || adCardType == 42
+                || adCardType == 44 || adCardType == 54 || adCardType == 57
+                || adCardType == 74 || adCardType == 87 || adCardType == 88
+                || adCardType == 100 || adCardType == 98 || adCardType == 101
+                || adCardType == 103 || adCardType == 129 || adCardType == 133
+                || adCardType == 134 || adCardType == 136));
     }
 
     public static void pegasusHook(JSONObject data) throws JSONException {
         JSONObject config = data.optJSONObject("config");
+        float ratio = Float.parseFloat(Settings.PegasusCoverRatio.get());
+        if (config != null && ratio != 0f)
+            config.put("small_cover_wh_ratio", ratio);
         if (config != null && shouldDisableAutoRefresh()) {
             config.put("auto_refresh_time", 0);
             config.put("auto_refresh_time_by_appear", -1L);
@@ -924,6 +977,9 @@ public class PegasusPatch {
                         || (!TextUtils.isEmpty(goTo) && goTo.contains(type))) {
                     typeMatched = true;
                     break;
+                } else if ("av".equals(cardGoto) && "cannot_play".equals(type) && item.optInt("can_play") != 1) {
+                    typeMatched = true;
+                    break;
                 }
             }
             return typeMatched || isLowPlayCountVideo(item, playCountLimit)
@@ -935,7 +991,29 @@ public class PegasusPatch {
                     uidArray, categorySet, channelSet
             );
         });
+        int column = config != null ? config.optInt("column", 2) : 2;
+        align(items, column);
         Jsons.forEach(items, PegasusPatch::appendReasons);
+    }
+
+    private static void align(JSONArray items, int column) throws JSONException {
+        if (Utils.isHd() || column % 2 != 0) return;
+        int smallCardCount = 0;
+        int lastSmallCardIndex = -1;
+        for (int i = items.length() - 1; i >= 0; i--) {
+            JSONObject item = items.getJSONObject(i);
+            String cardType = item.optString("card_type");
+            long adCardType = -1;
+            JSONObject adInfo = item.optJSONObject("ad_info");
+            if (adInfo != null)
+                adCardType = adInfo.optLong("card_type", -1);
+            boolean isLargeCard = isLargeCard(cardType, adCardType);
+            if (lastSmallCardIndex == -1 && !isLargeCard)
+                lastSmallCardIndex = i;
+            smallCardCount += (isLargeCard ? 2 : 1);
+        }
+        if (smallCardCount % 2 != 0)
+            items.remove(lastSmallCardIndex);
     }
 
     public static void filterViewRelates(ViewReply viewReply) {
@@ -1039,6 +1117,7 @@ public class PegasusPatch {
     public static List<Integer> getToRemoveRelateCardIndexes(List<RelateCard> relateCards, BizType bizType) {
         boolean removeRelatePromote = Settings.RemoveRelatePromote.get();
         boolean removeRelateOnlyAv = Settings.RemoveRelateOnlyAv.get();
+        boolean removeRelateCharge = Settings.RemoveRelateCharge.get();
         boolean applyToVideo = Settings.HomeFilterApplyToVideo.get();
         long playCountLimit = Settings.LowPlayCountLimit.get();
         int shortDurationLimit = Settings.ShortDurationLimit.get();
@@ -1086,6 +1165,7 @@ public class PegasusPatch {
             RelateCard relate = relateCards.get(i);
             if (isPromoteRelateUnite(relate, removeRelatePromote)
                     || isNotAvRelateUnite(relate, removeRelateOnlyAv, bizType)
+                    || (removeRelateCharge && relate.getBasicInfo().getReportFlowData().contains("chg_plt_up"))
                     || (applyToVideo && (isLowPlayCountRelateUnite(relate, playCountLimit)
                     || isDurationInvalidRelateUnite(relate, shortDurationLimit, longDurationLimit)
                     || isContainsBlockKwdRelateUnite(relate, titleRegexMode, titleSet, titleRegexes, reasonRegexMode, reasonSet, reasonRegexes, upRegexMode, upSet, upRegexes, uidArray))))
@@ -1253,6 +1333,133 @@ public class PegasusPatch {
             }
         }
 
+        return false;
+    }
+
+    public static void filterStory(StoryFeedResponse storyFeedResponse) {
+        Set<? extends String> filterTypes = Settings.FilterStory.get();
+        boolean applyToStory = Settings.HomeFilterApplyToStory.get();
+        boolean removeChargeButton = Settings.RemoveChargeButton.get();
+        if (filterTypes.isEmpty() && !applyToStory && !removeChargeButton)
+            return;
+        long playCountLimit = Settings.LowPlayCountLimit.get();
+        int shortDurationLimit = Settings.ShortDurationLimitStory.get();
+        int longDurationLimit = Settings.LongDurationLimitStory.get();
+        Set<? extends String> titleSet = Settings.HomeRcmdFilterTitle.get();
+        boolean titleRegexMode = Settings.HomeRcmdFilterTitleRegexMode.get();
+        List<Pattern> titleRegexes;
+        if (titleRegexMode && cachedTitileSet.equals(titleSet))
+            titleRegexes = cachedTitleRegexes;
+        else if (titleRegexMode) {
+            cachedTitileSet = new HashSet<>(titleSet);
+            titleRegexes = titleSet.stream().map(Pattern::compile).collect(Collectors.toList());
+            cachedTitleRegexes = titleRegexes;
+        } else {
+            titleRegexes = Collections.emptyList();
+        }
+        Set<? extends String> upSet = Settings.HomeRcmdFilterUp.get();
+        boolean upRegexMode = Settings.HomeRcmdFilterUpRegexMode.get();
+        List<Pattern> upRegexes;
+        if (upRegexMode && cachedUpSet.equals(upSet))
+            upRegexes = cachedUpRegexes;
+        else if (upRegexMode) {
+            cachedUpSet = new HashSet<>(upSet);
+            upRegexes = upSet.stream().map(Pattern::compile).collect(Collectors.toList());
+            cachedUpRegexes = upRegexes;
+        } else {
+            upRegexes = Collections.emptyList();
+        }
+        Set<? extends String> uidSet = Settings.HomeRcmdFilterUid.get();
+        long[] uidArray = ArrayUtils.toLongArray(uidSet);
+        List<StoryDetail> items = storyFeedResponse.getItems();
+        if (items == null || items.isEmpty()) return;
+        items.removeIf(story -> {
+            if (removeChargeButton) {
+                StoryDetail.Owner owner = story.getOwner();
+                if (owner != null) {
+                    StoryDetail.Charge charge = owner.getCharge();
+                    if (charge != null)
+                        charge.setShow(false);
+                }
+            }
+            return isTypeMatchedStory(story, filterTypes)
+                    || (applyToStory && (isLowPlayCountStory(story, playCountLimit)
+                    || isDurationInvalidStory(story, shortDurationLimit, longDurationLimit)
+                    || isUidBlockedStory(story, uidArray)
+                    || isUpBlockedStory(story, upSet, upRegexes, upRegexMode)
+                    || isTitleBlockedStory(story, titleSet, titleRegexes, titleRegexMode)));
+        });
+    }
+
+    private static boolean isTypeMatchedStory(StoryDetail story, Set<? extends String> filterTypes) {
+        if (filterTypes.isEmpty()) return false;
+        String aGoto = story.getGoto();
+        if (TextUtils.isEmpty(aGoto)) return false;
+        for (String type : filterTypes)
+            if (aGoto.contains(type))
+                return true;
+        return false;
+    }
+
+    private static boolean isLowPlayCountStory(StoryDetail story, long playCountLimit) {
+        if (playCountLimit == 0) return false;
+        StoryDetail.Stat stat = story.getStat();
+        return stat != null && stat.getView() < playCountLimit;
+    }
+
+    private static boolean isDurationInvalidStory(StoryDetail story, int shortDuration, int longDuration) {
+        if (shortDuration == 0 && longDuration == 0)
+            return false;
+        long duration = story.getDuration();
+        if (shortDuration != 0 && duration < shortDuration)
+            return true;
+        return longDuration != 0 && duration > longDuration;
+    }
+
+    private static boolean isTitleBlockedStory(StoryDetail story, Set<? extends String> titles, List<Pattern> titleRegexes, boolean regexMode) {
+        if (titles.isEmpty()) return false;
+        String title = story.getTitle();
+        if (TextUtils.isEmpty(title)) return false;
+        if (regexMode) {
+            for (int i = 0; i < titleRegexes.size(); i++) {
+                if (titleRegexes.get(i).matcher(title).find())
+                    return true;
+            }
+        } else {
+            for (String s : titles) {
+                if (title.contains(s))
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isUidBlockedStory(StoryDetail story, long[] uids) {
+        if (uids.length == 0) return false;
+        StoryDetail.Owner owner = story.getOwner();
+        if (owner == null) return false;
+        long mid = owner.getMid();
+        if (mid <= 0) return false;
+        return ArrayUtils.contains(uids, mid);
+    }
+
+    private static boolean isUpBlockedStory(StoryDetail story, Set<? extends String> ups, List<Pattern> upRegexes, boolean regexMode) {
+        if (ups.isEmpty()) return false;
+        StoryDetail.Owner owner = story.getOwner();
+        if (owner == null) return false;
+        String name = owner.getName();
+        if (TextUtils.isEmpty(name)) return false;
+        if (regexMode) {
+            for (int i = 0; i < upRegexes.size(); i++) {
+                if (upRegexes.get(i).matcher(name).find())
+                    return true;
+            }
+        } else {
+            for (String s : ups) {
+                if (name.contains(s))
+                    return true;
+            }
+        }
         return false;
     }
 

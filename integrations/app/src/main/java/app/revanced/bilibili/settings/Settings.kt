@@ -31,7 +31,7 @@ object Settings {
     @JvmField val RememberLosslessSetting = BooleanSetting(key = "remember_lossless_setting")
     @JvmField val DefaultPlaybackSpeed = FloatSetting(key = "default_playback_speed")
     @JvmField val LongPressPlaybackSpeed = FloatSetting(key = "long_press_playback_speed")
-    @JvmField val OverridePlaybackSpeed = StringSetting(key = "playback_speed_override")
+    @JvmField val OverridePlaybackSpeed = StringSetting(key = "playback_speed_override", needReboot = true)
     @JvmField val TrialVipQuality = BooleanSetting(key = "trial_vip_quality")
     @JvmField val DisableSegmentedSection = BooleanSetting(key = "disable_segmented_section")
     @JvmField val DisableAutoNextPlay = BooleanSetting(key = "disable_auto_next_play")
@@ -40,6 +40,9 @@ object Settings {
     @JvmField val ForceHwCodec = BooleanSetting(key = "force_hw_codec")
     @JvmField val DisableP2PUpload = BooleanSetting(key = "disable_p2p_upload", needReboot = true)
     @JvmField val PreferStableCdn = BooleanSetting(key = "prefer_stable_cdn", needReboot = true)
+    @JvmField val AccessKeyMain = StringSetting(key = "access_key_main")
+    @JvmField val AccessKeyThailand = StringSetting(key = "access_key_th")
+    @JvmField val RememberPlaybackSpeed = BooleanSetting(key = "remember_playback_speed")
     // endregion
 
 
@@ -50,9 +53,12 @@ object Settings {
     @JvmField val FilterHomeRecommend = StringSetSetting(key = "customize_home_recommend")
     @JvmField val HomeFilterApplyToVideo = BooleanSetting(key = "home_filter_apply_to_relate")
     @JvmField val HomeFilterApplyToPopular = BooleanSetting(key = "home_filter_apply_to_popular")
+    @JvmField val HomeFilterApplyToStory = BooleanSetting(key = "home_filter_apply_to_story")
     @JvmField val LowPlayCountLimit = LongSetting(key = "hide_low_play_count_recommend_limit")
     @JvmField val ShortDurationLimit = IntSetting(key = "hide_short_duration_recommend_limit")
     @JvmField val LongDurationLimit = IntSetting(key = "hide_long_duration_recommend_limit")
+    @JvmField val ShortDurationLimitStory = IntSetting(key = "hide_short_duration_story_limit")
+    @JvmField val LongDurationLimitStory = IntSetting(key = "hide_long_duration_story_limit")
     @JvmField val HomeRcmdFilterTitle = StringSetSetting(key = "home_filter_keywords_title")
     @JvmField val HomeRcmdFilterTitleRegexMode = BooleanSetting(key = "home_filter_title_regex_mode")
     @JvmField val HomeRcmdFilterReason = StringSetSetting(key = "home_filter_keywords_reason")
@@ -79,6 +85,7 @@ object Settings {
     @JvmField val BlockPopularRcmdUp = BooleanSetting(key = "block_popular_rcmd_up")
     @JvmField val BlockPopularLive = BooleanSetting(key = "block_popular_live")
     @JvmField val BlockHomeRecentUsed = BooleanSetting(key = "block_home_recent_used")
+    @JvmField val PegasusCoverRatio = StringSetting(key = "pegasus_cover_ratio", defValue = "0", needReboot = true)
     // endregion
 
 
@@ -128,6 +135,7 @@ object Settings {
     @JvmField val DisableSlideLeft = BooleanSetting(key = "disable_slide_left")
     @JvmField val DisableAutoFloat = BooleanSetting(key = "disable_auto_float")
     @JvmField val RemoveLiveWatermark = BooleanSetting(key = "remove_live_watermark")
+    @JvmField val LiveNoBlock = BooleanSetting(key = "live_no_block")
     // endregion
 
 
@@ -137,7 +145,9 @@ object Settings {
     @JvmField val UnlockPlayLimit = BooleanSetting(key = "play_arc_conf")
     @JvmField val ReplaceStoryVideo = BooleanSetting(key = "replace_story_video")
     @JvmField val DisableStoryFull = BooleanSetting(key = "disable_story_full")
-    @JvmField val RemoveCmdDms = BooleanSetting(key = "remove_video_cmd_dms")
+    @JvmField @Deprecated("replaced by RemoveVideoPopups") val RemoveCmdDms =
+        BooleanSetting(key = "remove_video_cmd_dms")
+    @JvmField val RemoveVideoPopups = StringSetSetting(key = "remove_video_popups")
     @JvmField val BlockWordSearch = BooleanSetting(key = "block_word_search")
     @JvmField val BlockCommentGuide = BooleanSetting(key = "block_comment_guide")
     @JvmField val BlockVideoComment = BooleanSetting(key = "block_video_comment")
@@ -148,6 +158,7 @@ object Settings {
         BooleanSetting(key = "remove_video_relate_only_av", dependency = RemoveRelatePromote)
     @JvmField val RemoveRelateNothing =
         BooleanSetting(key = "remove_video_relate_nothing", dependency = RemoveRelateOnlyAv)
+    @JvmField val RemoveRelateCharge = BooleanSetting("remove_video_relate_charge")
     @JvmField val DisableAutoSelect = BooleanSetting(key = "disable_auto_select")
     @JvmField val DisableAutoSubscribe = BooleanSetting(key = "disable_auto_subscribe")
     @JvmField val FilterStory = StringSetSetting(key = "filter_story")
@@ -174,6 +185,9 @@ object Settings {
     @JvmField val NotLockOrientation = BooleanSetting(key = "not_lock_orientation")
     @JvmField val CheckComment = BooleanSetting(key = "check_comment")
     @JvmField val StoryUIStyle = StringSetting(key = "story_ui_style", defValue = "0")
+    @JvmField val UnlockGif = BooleanSetting(key = "unlock_gif")
+    @JvmField val TimeAirborne = BooleanSetting(key = "time_airborne")
+    @JvmField val OldDmPanel = BooleanSetting(key = "old_dm_panel")
     // endregion
 
 
@@ -187,10 +201,16 @@ object Settings {
 
 
     // region Group: 搜索页
-    @JvmField val PurifySearch = BooleanSetting(key = "purify_search")
-    @JvmField val FilterSearchType = StringSetSetting(key = "filter_search_type")
+    @JvmField @Deprecated("replaced by PurifySearchTypes") val PurifySearch = BooleanSetting(key = "purify_search")
+    @JvmField val PurifySearchTypes = StringSetSetting(key = "purify_search_types")
     @JvmField val SearchBangumi = BooleanSetting(key = "search_area_bangumi")
     @JvmField val SearchMovie = BooleanSetting(key = "search_area_movie")
+    @JvmField val FilterSearchType = StringSetSetting(key = "filter_search_type")
+    @JvmField val FilterSearchContent = StringSetSetting(key = "filter_search_content")
+    @JvmField val FilterSearchContentRegexMode = BooleanSetting(key = "filter_search_content_regex")
+    @JvmField val FilterSearchUp = StringSetSetting(key = "filter_search_up")
+    @JvmField val FilterSearchUpRegexMode = BooleanSetting(key = "filter_search_up_regex")
+    @JvmField val FilterSearchUid = StringSetSetting(key = "filter_search_uid")
     // endregion
 
 
@@ -226,14 +246,14 @@ object Settings {
         IntSetting(key = "text_fold_dyn_max_lines", defValue = Constants.DEF_DYN_MAX_LINES)
     @JvmField val TextFoldDynLinesToAll =
         IntSetting(key = "text_fold_dyn_lines_to_all", defValue = Constants.DEF_DYN_LINES_TO_ALL)
-    @JvmField val BlockModules = BooleanSetting(key = "block_modules", onChange = { value, async ->
-        if (value) if (async) {
-            Utils.async { deleteModuleResources() }
-        } else {
-            deleteModuleResources()
-        }
-    })
-    @JvmField val BlockModulesException = StringSetSetting(key = "block_modules_exception", dependency = BlockModules)
+    @JvmField val DelayDownloadModules =
+        BooleanSetting(key = "delay_download_modules", defValue = true, onChange = { value, async ->
+            if (value) if (async) {
+                Utils.async { deleteModuleResources() }
+            } else {
+                deleteModuleResources()
+            }
+        })
     @JvmField val MusicNotification = BooleanSetting(key = "music_notification", needReboot = true)
     @JvmField val PurifyShare = BooleanSetting(key = "purify_share")
     @JvmField val FuckMiniProgram = BooleanSetting(key = "mini_program")
@@ -256,6 +276,7 @@ object Settings {
         }
     })
     @JvmField val DisallowCollectPrivacyInfo = BooleanSetting(key = "disallow_collect_privacy_info", needReboot = true)
+    @JvmField val DisableWebViewNonOfficialAlert = BooleanSetting(key = "disable_non_official_alert")
     // endregion
 
 
@@ -264,5 +285,6 @@ object Settings {
     @JvmField val BgPlayingEnabled = BooleanSetting(key = "bg_playing_enabled")
     @JvmField val CustomColor = IntSetting(key = "biliroaming_custom_color", defValue = Color.WHITE)
     @JvmField val SkinJson = StringSetting(key = "skin_json", dependency = Skin)
+    @JvmField val SelectedPlaybackSpeed = FloatSetting(key = "selected_playback_speed")
     // endregion
 }

@@ -73,6 +73,9 @@
         <item>正在去买</item>
         <item>礼物星球</item>
         <item>主播帮玩</item>
+        <item>各种+1</item>
+        <item>心愿助力</item>
+        <item>直播效果打分</item>
     </string-array>
     <string-array name="biliroaming_live_popup_values">
         <item>shoppingCard</item>
@@ -85,6 +88,9 @@
         <item>gotoBuy</item>
         <item>giftStar</item>
         <item>playTogether</item>
+        <item>plusOne</item>
+        <item>wish</item>
+        <item>qoe</item>
     </string-array>
     <string-array name="biliroaming_drawer_style_entries">
         <item>默认</item>
@@ -127,6 +133,7 @@
         <item>PGC 内容</item>
         <item>课堂</item>
         <item>漫画</item>
+        <item>无权查看视频</item>
         <item>大卡</item>
         <item>中卡</item>
         <item>小卡</item>
@@ -144,6 +151,7 @@
         <item>番剧、电影、电视剧、纪录片……</item>
         <item />
         <item />
+        <item>例如充电专属</item>
         <item>单列显示的</item>
         <item />
         <item>双列显示的</item>
@@ -161,6 +169,7 @@
         <item>bangumi</item>
         <item>course</item>
         <item>comic</item>
+        <item>cannot_play</item>
         <item>large_cover</item>
         <item>middle_cover</item>
         <item>small_cover</item>
@@ -364,6 +373,7 @@
         <item>专栏</item>
         <item>动态</item>
         <item>直播</item>
+        <item>课堂</item>
     </string-array>
     <string-array name="biliroaming_search_type_values">
         <item>hot_banner</item>
@@ -380,6 +390,7 @@
         <item>article</item>
         <item>twitter</item>
         <item>live</item>
+        <item>ketang</item>
     </string-array>
     <string-array name="biliroaming_block_follow_button_entries">
         <item>评论</item>
@@ -417,7 +428,7 @@
     </string-array>
     <string-array name="biliroaming_player_version_summaries">
         <item />
-        <item>较高版本中由于缺少官方维护，存在不能查看评论区图片等问题，不建议使用</item>
+        <item>较高版本上由于缺少官方维护，可能存在问题，不建议使用</item>
         <item />
     </string-array>
     <string-array name="biliroaming_display_size_entries">
@@ -463,5 +474,49 @@
         <item>4</item>
         <item>6</item>
         <item>7</item>
+    </string-array>
+    <string-array name="biliroaming_pegasus_cover_ratio_entries">
+        <item>默认</item>
+        <item>16:9</item>
+        <item>4:3</item>
+    </string-array>
+    <string-array name="biliroaming_pegasus_cover_ratio_values">
+        <item>0</item>
+        <item>1.777778</item>
+        <item>1.333333</item>
+    </string-array>
+    <string-array name="biliroaming_video_popup_entries">
+        <item>投票弹幕</item>
+        <item>三连关注弹幕</item>
+        <item>评分弹幕</item>
+        <item>评分总结弹幕</item>
+        <item>关联视频弹幕</item>
+        <item>其它</item>
+    </string-array>
+    <string-array name="biliroaming_video_popup_values">
+        <item>vote</item>
+        <item>attention</item>
+        <item>grade</item>
+        <item>gradeSummary</item>
+        <item>link</item>
+        <item>other</item>
+    </string-array>
+    <string-array name="biliroaming_video_popup_summaries">
+        <item />
+        <item />
+        <item />
+        <item />
+        <item />
+        <item>云视听小电视、免流引导、投资UP主、跳转应用等</item>
+    </string-array>
+    <string-array name="biliroaming_purify_search_type_entries">
+        <item>默认关键词</item>
+        <item>热搜</item>
+        <item>发现</item>
+    </string-array>
+    <string-array name="biliroaming_purify_search_type_values">
+        <item>words</item>
+        <item>trending</item>
+        <item>recommend</item>
     </string-array>
 </resources>

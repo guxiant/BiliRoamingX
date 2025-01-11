@@ -57,7 +57,6 @@ object SettingsResourcePatch : ResourcePatch() {
         "biliroaming_setting_block_follow.xml",
         "biliroaming_setting_filter_story.xml",
         "biliroaming_setting_misc.xml",
-        "biliroaming_setting_block_module.xml",
         "biliroaming_setting_backup.xml",
         "biliroaming_setting_player_version.xml",
         "biliroaming_setting_display_size.xml",
@@ -66,11 +65,17 @@ object SettingsResourcePatch : ResourcePatch() {
         "biliroaming_setting_subtitle_translate_server.xml",
         "biliroaming_setting_external_downloader.xml",
         "biliroaming_setting_story_ui_style.xml",
+        "biliroaming_setting_filter_story_by_type.xml",
+        "biliroaming_setting_tool.xml",
+        "biliroaming_setting_cover_ratio.xml",
+        "biliroaming_setting_video_popups.xml",
+        "biliroaming_setting_purify_search_types.xml",
     )
     private val layouts = arrayOf(
         "biliroaming_dialog_argb_color_choose.xml",
         "biliroaming_dialog_color_choose.xml",
         "biliroaming_dialog_area_server.xml",
+        "biliroaming_dialog_access_key.xml",
         "biliroaming_search_bar.xml",
     )
     private val drawables = arrayOf(

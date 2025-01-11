@@ -3,10 +3,11 @@ package app.revanced.bilibili.patches.okhttp
 import android.util.Pair
 import androidx.annotation.Keep
 import app.revanced.bilibili.api.BrotliInputStream
+import app.revanced.bilibili.patches.main.ApplicationDelegate
 import app.revanced.bilibili.patches.okhttp.hooks.*
 import app.revanced.bilibili.settings.Settings
 import app.revanced.bilibili.utils.Logger
-import app.revanced.bilibili.utils.Utils
+import app.revanced.bilibili.utils.safeContent
 import java.io.InputStream
 import java.util.zip.GZIPInputStream
 import java.util.zip.InflaterInputStream
@@ -31,6 +32,9 @@ object OkHttpPatch {
         RoomPlayInfo,
         SearchAll,
         SearchByType,
+        SearchDefaultWords,
+        SearchRecommend,
+        SearchSquare,
         Season,
         SeasonRecommend,
         ShareChannels,
@@ -40,17 +44,17 @@ object OkHttpPatch {
         Subtitle,
         UnlockEpisodesForPlay,
         Upgrade,
+        ViewLikeTriple,
         VipAds,
+        VipPrivilegeInfo,
     )
 
     @Keep
     @JvmStatic
     fun shouldHook(url: String, code: Int): Boolean {
-        if (Utils.getContext() == null) {
-            // too early, even application not attached, just let them go
+        if (!ApplicationDelegate.attached())
             return false
-        }
-        Logger.debug { "OkHttpPatch.shouldHook, code: %d, url: %s".format(code, url) }
+        Logger.debug { "OkHttpPatch.shouldHook, code: $code, url: ${url.safeContent}" }
         return (code == 200 && Settings.Debug()) || hooks.any { it.shouldHook(url, code) }
     }
 
@@ -84,19 +88,17 @@ object OkHttpPatch {
             "br" -> BrotliInputStream(respStream)
             else -> respStream
         }).bufferedReader().use { it.readText() }
-        Logger.debug { "OkHttpPatch.hook, code: %d, url: %s".format(code, url) }
-        Logger.debug { "OkHttpPatch.hook, request, encoding: $reqEncoding, content: $request" }
-        Logger.debug { "OkHttpPatch.hook, response, encoding: $respEncoding, content: $response" }
+        Logger.debug { "OkHttpPatch.hook, code: $code, url: ${url.safeContent}" }
+        Logger.debug { "OkHttpPatch.hook, request, encoding: $reqEncoding, content: ${request.safeContent}" }
+        Logger.debug { "OkHttpPatch.hook, response, encoding: $respEncoding, content: ${response.safeContent}" }
         return hook(url, code, request, response)
     }
 
     @Keep
     @JvmStatic
     fun hookBefore(url: String, headers: Array<String>): Pair<String, Array<String>> {
-        if (Utils.getContext() == null) {
-            // too early, even application not attached, just let them go
+        if (!ApplicationDelegate.attached())
             return Pair.create(url, headers)
-        }
         return hooks.find { it.shouldHookBefore(url, headers) }
             ?.hookBefore(url, headers) ?: Pair.create(url, headers)
     }

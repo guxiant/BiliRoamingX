@@ -84,6 +84,10 @@
         <androidx.preference.SwitchPreferenceCompat
             android:key="disable_player_long_press"
             android:title="@string/biliroaming_disable_player_long_press_title" />
+        <androidx.preference.SwitchPreferenceCompat
+            android:key="remember_playback_speed"
+            android:summary="@string/biliroaming_remember_playback_speed_summary"
+            android:title="@string/biliroaming_remember_playback_speed_title" />
     </androidx.preference.PreferenceCategory>
 
     <androidx.preference.PreferenceCategory
@@ -120,6 +124,10 @@
             android:key="prefer_stable_cdn"
             android:summary="@string/biliroaming_prefer_stable_cdn_summary"
             android:title="@string/biliroaming_prefer_stable_cdn_title" />
+        <androidx.preference.Preference
+            android:key="custom_access_key"
+            android:summary="@string/biliroaming_custom_access_key_summary"
+            android:title="@string/biliroaming_custom_access_key_title" />
     </androidx.preference.PreferenceCategory>
 
     <androidx.preference.PreferenceCategory

@@ -1,5 +1,6 @@
 package app.revanced.bilibili.patches
 
+import android.annotation.SuppressLint
 import android.util.TypedValue
 import android.view.View
 import android.view.ViewGroup
@@ -8,19 +9,17 @@ import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.annotation.Keep
-import app.revanced.bilibili.settings.Setting
+import app.revanced.bilibili.patches.main.ApplicationDelegate
 import app.revanced.bilibili.settings.Settings
-import app.revanced.bilibili.utils.*
-import com.bilibili.music.podcast.view.PodcastSpeedSeekBar
+import app.revanced.bilibili.utils.Reflex
+import app.revanced.bilibili.utils.Utils
+import app.revanced.bilibili.utils.children
+import app.revanced.bilibili.utils.dp
+import com.bilibili.video.story.StoryVideoActivity
 import tv.danmaku.ijk.media.player.IMediaPlayer
+import java.lang.ref.WeakReference
 
 object PlaybackSpeedPatch {
-    init {
-        Setting.registerPreferenceChangeListener { _, key ->
-            if (key == Settings.OverridePlaybackSpeed.key)
-                refreshOverrideSpeedList()
-        }
-    }
 
     @JvmStatic
     private val stockSpeedArray = floatArrayOf(2.0f, 1.5f, 1.25f, 1.0f, 0.75f, 0.5f)
@@ -65,18 +64,43 @@ object PlaybackSpeedPatch {
             cacheReverseSpeedArray
         }
 
+    @JvmStatic
+    private var playerCache = WeakReference<IMediaPlayer>(null)
+
     @Keep
     @JvmStatic
     fun defaultSpeed(player: IMediaPlayer?, speed: Float): Float {
         // only apply to video, not apply to podcast
         if (player != null && player.videoSarNum <= 0) return speed
-        val customSpeed = Settings.DefaultPlaybackSpeed()
-        return if (customSpeed != 0f) customSpeed else speed
+        val newSpeed = if (playerCache.get() !== player || ApplicationDelegate.getTopActivity() is StoryVideoActivity) {
+            defaultSpeed(speed)
+        } else speed
+        playerCache = WeakReference(player)
+        return newSpeed
     }
 
     @Keep
     @JvmStatic
-    fun defaultSpeed(speed: Float) = defaultSpeed(null, speed)
+    fun defaultSpeed(speed: Float): Float {
+        val defaultSpeed = Settings.DefaultPlaybackSpeed()
+        return if (Settings.RememberPlaybackSpeed()) {
+            val selectedSpeed = Settings.SelectedPlaybackSpeed()
+            if (selectedSpeed == 0f && defaultSpeed != 0f) {
+                defaultSpeed
+            } else if (selectedSpeed != 0f) {
+                selectedSpeed
+            } else speed
+        } else if (defaultSpeed != 0f) {
+            defaultSpeed
+        } else speed
+    }
+
+    @Keep
+    @JvmStatic
+    fun onPlaybackSpeedSelected(speed: Float) {
+        if (Settings.RememberPlaybackSpeed())
+            Settings.SelectedPlaybackSpeed.save(speed)
+    }
 
     @Keep
     @JvmStatic
@@ -100,28 +124,15 @@ object PlaybackSpeedPatch {
         return newSpeedReversedArray.let { if (it.isNotEmpty()) it else original }
     }
 
-    @JvmStatic
-    fun refreshOverrideSpeedList() {
-        (newSpeedArray.takeIf { it.isNotEmpty() } ?: stockSpeedArray).let {
-            refreshMenuFuncSegmentSpeedArray(it)
-            refreshNewShareServiceSpeedArray(it)
-        }
-    }
-
     @Keep
-    // codes will filled by patcher
     @JvmStatic
-    private fun refreshMenuFuncSegmentSpeedArray(array: FloatArray) {
-    }
-
-    @Keep
-    // codes will filled by patcher
-    @JvmStatic
-    private fun refreshNewShareServiceSpeedArray(array: FloatArray) {
+    fun getOverrideSpeedArraySize(): Int {
+        return newSpeedArray.let { if (it.isNotEmpty()) it.size else 6 }
     }
 
     @Keep
     @JvmStatic
+    @SuppressLint("SetTextI18n")
     fun onNewPlaybackSpeedSetting(setting: Any) {
         val newSpeedReversedArray = newSpeedReversedArray.takeIf { it.isNotEmpty() }
             ?: stockReverseSpeedArray
@@ -185,19 +196,6 @@ object PlaybackSpeedPatch {
             ?.set(null, newSpeedIdMap.values.toIntArray())
         Reflex.findFirstFieldByExactTypeOrNull(clazz, FloatArray::class.java)
             ?.set(null, newSpeedReversedArray)
-    }
-
-    @Keep
-    @JvmStatic
-    fun onNewPodcastSpeedSeekBar(seekBar: PodcastSpeedSeekBar) {
-        val newSpeedReversedArray = newSpeedReversedArray.takeIf { it.isNotEmpty() }
-            ?: stockReverseSpeedArray
-        val speedNameList = seekBar.speedNameListForBiliRoaming.ifEmpty { return }
-        val pairClass = speedNameList.first().javaClass
-        speedNameList.clear()
-        speedNameList.addAll(newSpeedReversedArray.map { pairClass.new(it, "${it}x") })
-        seekBar.setSpeedArrayForBiliRoaming(newSpeedReversedArray)
-        seekBar.max = newSpeedReversedArray.lastIndex.coerceAtLeast(0) * 100
     }
 
     @Keep

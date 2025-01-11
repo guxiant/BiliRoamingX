@@ -12,6 +12,20 @@ import java.net.URL
 object ShareClick : ApiHook() {
     private val contentRegex = Regex("(.*)(http\\S*)(.*)")
 
+    private class WhitelistQuery(val name: String, vararg val ignoredValues: String)
+
+    private val whitelistQueries
+        get() = listOf(
+            WhitelistQuery("start_progress"),
+            WhitelistQuery("p", "1"),
+            WhitelistQuery("topic_id"),
+            WhitelistQuery("comment_on"),
+            WhitelistQuery("comment_root_id"),
+            WhitelistQuery("comment_secondary_id"),
+            WhitelistQuery("type"),
+            WhitelistQuery("itemsId"),
+        )
+
     override fun shouldHook(url: String, status: Int): Boolean {
         return status.isOk && url.contains("/x/share/click")
                 && (Settings.UnlockAreaLimit() || Settings.PurifyShare() || Settings.FuckMiniProgram())
@@ -78,7 +92,7 @@ object ShareClick : ApiHook() {
         return json.toString()
     }
 
-    private fun purifyUrl(url: String) = replaceBv2Av(resolveUrl(url))
+    fun purifyUrl(url: String) = replaceBv2Av(resolveUrl(url))
 
     private fun replaceBv2Av(url: String): String {
         if (!Settings.EnableAv()) return url
@@ -92,24 +106,26 @@ object ShareClick : ApiHook() {
         val connection = URL(url).openConnection() as HttpURLConnection
         connection.requestMethod = "GET"
         connection.instanceFollowRedirects = false
+        connection.connectTimeout = 3000
+        connection.readTimeout = 3000
         connection.connect()
         var newUrl = url
         if (connection.responseCode == HttpURLConnection.HTTP_MOVED_TEMP) {
             val realUrl = connection.getHeaderField("Location")
             if (!realUrl.isNullOrEmpty()) {
                 val uri = Uri.parse(realUrl)
-                val startProgress = uri.getQueryParameter("start_progress")
-                val p = uri.getQueryParameter("p")
-                val topicId = uri.getQueryParameter("topic_id")
-                newUrl = uri.buildUpon()
-                    .clearQuery().encodedFragment(null).apply {
-                        if (!startProgress.isNullOrEmpty())
-                            appendQueryParameter("start_progress", startProgress)
-                        if (!p.isNullOrEmpty() && p != "1")
-                            appendQueryParameter("p", p)
-                        if (!topicId.isNullOrEmpty())
-                            appendQueryParameter("topic_id", topicId)
-                    }.build().toString()
+                newUrl = uri.buildUpon().clearQuery().apply {
+                    if (uri.fragment.orEmpty().startsWith("reply")) {
+                        fragment(uri.fragment)
+                    } else {
+                        encodedFragment(null)
+                    }
+                    for (q in whitelistQueries) {
+                        val v = uri.getQueryParameter(q.name)
+                        if (!v.isNullOrEmpty() && !q.ignoredValues.contains(v))
+                            appendQueryParameter(q.name, v)
+                    }
+                }.toString()
             }
         }
         newUrl

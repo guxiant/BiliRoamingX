@@ -10,13 +10,14 @@ import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.instruction.formats.Instruction21s
 
 @Patch(
-    name = "Bili adjust layout (codes)",
+    name = "Bili adjust layout",
     description = "调整部分布局UI",
     compatiblePackages = [
         CompatiblePackage(name = "tv.danmaku.bili"),
         CompatiblePackage(name = "tv.danmaku.bilibilihd"),
         CompatiblePackage(name = "com.bilibili.app.in")
-    ]
+    ],
+    dependencies = [BiliLayoutAdjustResourcesPatch::class],
 )
 object BiliLayoutAdjustPatch : BytecodePatch(setOf(SetUnitedTabLayoutFingerprint)) {
     override fun execute(context: BytecodeContext) {
@@ -31,8 +32,9 @@ object BiliLayoutAdjustPatch : BytecodePatch(setOf(SetUnitedTabLayoutFingerprint
                     index to inst.registerA
                 } else null
             }
-            replaceInstruction(index1, "const/16 v$register1, 0xc")
-            replaceInstruction(index2, "const/16 v$register2, 0x8")
+            // change tab horizontal padding
+            replaceInstruction(index1, "const/16 v$register1, 0x10") // tab size <= 2
+            replaceInstruction(index2, "const/16 v$register2, 0xc")  // tab size > 2
         }
     }
 }

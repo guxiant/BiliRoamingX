@@ -1,11 +1,9 @@
 package app.revanced.bilibili.settings
 
-import android.content.Context
 import android.content.SharedPreferences
 import android.content.SharedPreferences.OnSharedPreferenceChangeListener
 import app.revanced.bilibili.account.Accounts
 import app.revanced.bilibili.utils.*
-import java.lang.ref.WeakReference
 
 @Suppress("LeakingThis", "NOTHING_TO_INLINE")
 sealed class Setting<out T : Any>(
@@ -30,11 +28,7 @@ sealed class Setting<out T : Any>(
     protected abstract fun saveInternal(newValue: @UnsafeVariance T)
 
     fun save(newValue: @UnsafeVariance T) {
-        if (Utils.isMainProcess()) {
-            saveInternal(newValue)
-        } else {
-            PreferenceUpdater.update(key to newValue)
-        }
+        saveInternal(newValue)
     }
 
     fun set(newValue: @UnsafeVariance T) {
@@ -72,56 +66,56 @@ sealed class Setting<out T : Any>(
         private val _all = mutableSetOf<Setting<Any>>()
         val all: Set<Setting<Any>> = _all
 
-        const val PREFS_NAME = "biliroaming"
+        val prefs: SharedPreferences = CrossProcessPreferences.get(Constants.PREFS_SETTING)
 
-        var prefs: SharedPreferences =
-            Utils.getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            private set
-
-        private val preferenceChangeListeners =
-            mutableListOf<WeakReference<OnSharedPreferenceChangeListener>>()
-
-        private val innerListener = OnSharedPreferenceChangeListener { preferences, key ->
-            onPreferenceChanged(preferences, key.orEmpty())
+        private val innerListener = OnSharedPreferenceChangeListener { _, key ->
+            onPreferenceChanged(key.orEmpty())
         }
+
+        private var async = true
 
         init {
+            migrate()
             prefs.registerOnSharedPreferenceChangeListener(innerListener)
         }
 
-        fun reload() {
-            prefs = Utils.getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            all.forEach { it.load() }
-            prefs.registerOnSharedPreferenceChangeListener(innerListener)
+        fun asyncExecuteOnChangeAction(async: Boolean) {
+            this.async = async
         }
 
-        private fun onPreferenceChanged(preferences: SharedPreferences, key: String) {
+        private fun onPreferenceChanged(key: String) {
             Logger.debug { "onPreferenceChanged, key: $key" }
             all.find { it.key == key }?.run {
                 load()
-                SettingsSyncHelper.sync(key to get())
-                executeOnChangeAction(true)
-            }
-            preferenceChangeListeners.forEach {
-                it.get()?.onSharedPreferenceChanged(preferences, key)
+                if (Utils.isMainProcess())
+                    executeOnChangeAction(async)
             }
         }
 
-        fun notifySettingsChangedForViceProcess(key: String, value: Any) {
-            all.find { it.key == key }?.run {
-                set(value)
-                preferenceChangeListeners.forEach {
-                    it.get()?.onSharedPreferenceChanged(prefs, key)
+        private fun migrate() {
+            if (Utils.isMainProcess() &&
+                (prefs.getBoolean("remove_video_cmd_dms", false)
+                        || prefs.getBoolean("purify_search", false))
+            ) prefs.edit(commit = true) {
+                if (prefs.getBoolean("remove_video_cmd_dms", false)) {
+                    remove("remove_video_cmd_dms")
+                    val popups = setOf("vote", "attention", "grade", "gradeSummary", "link", "other")
+                    putStringSet("remove_video_popups", popups)
+                }
+                if (prefs.getBoolean("purify_search", false)) {
+                    remove("purify_search")
+                    val types = setOf("words", "trending", "recommend")
+                    putStringSet("purify_search_types", types)
                 }
             }
         }
 
         fun registerPreferenceChangeListener(listener: OnSharedPreferenceChangeListener) {
-            preferenceChangeListeners.add(WeakReference(listener))
+            prefs.registerOnSharedPreferenceChangeListener(listener)
         }
 
         fun unregisterPreferenceChangeListener(listener: OnSharedPreferenceChangeListener) {
-            preferenceChangeListeners.removeIf { it.get() === listener }
+            prefs.unregisterOnSharedPreferenceChangeListener(listener)
         }
     }
 }

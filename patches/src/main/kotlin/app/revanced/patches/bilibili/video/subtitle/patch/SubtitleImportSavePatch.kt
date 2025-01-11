@@ -8,10 +8,7 @@ import app.revanced.patcher.patch.annotation.Patch
 import app.revanced.patcher.util.proxy.mutableTypes.MutableField.Companion.toMutable
 import app.revanced.patches.bilibili.patcher.patch.MultiMethodBytecodePatch
 import app.revanced.patches.bilibili.utils.*
-import app.revanced.patches.bilibili.video.subtitle.fingerprints.FunctionWidgetServiceFingerprint
-import app.revanced.patches.bilibili.video.subtitle.fingerprints.FunctionWidgetTokenFingerprint
-import app.revanced.patches.bilibili.video.subtitle.fingerprints.PlayerSubtitleFunctionWidgetFingerprint
-import app.revanced.patches.bilibili.video.subtitle.fingerprints.SetDmViewReplyFingerprint
+import app.revanced.patches.bilibili.video.subtitle.fingerprints.*
 import app.revanced.util.exception
 import app.revanced.util.getReference
 import com.android.tools.smali.dexlib2.AccessFlags
@@ -28,13 +25,15 @@ import com.android.tools.smali.dexlib2.iface.reference.StringReference
         CompatiblePackage(name = "tv.danmaku.bili"),
         CompatiblePackage(name = "tv.danmaku.bilibilihd"),
         CompatiblePackage(name = "com.bilibili.app.in")
-    ]
+    ],
+    dependencies = [SubtitleImportSaveButtonPatch::class],
 )
 object SubtitleImportSavePatch : MultiMethodBytecodePatch(
     fingerprints = setOf(
         FunctionWidgetServiceFingerprint,
         SetDmViewReplyFingerprint,
         FunctionWidgetTokenFingerprint,
+        RecordSelectedSubtitleFingerprint,
     ),
     multiFingerprints = setOf(PlayerSubtitleFunctionWidgetFingerprint)
 ) {
@@ -118,6 +117,8 @@ object SubtitleImportSavePatch : MultiMethodBytecodePatch(
         val widgetTokenField = context.classes.first { it.type == absWidgetClass }.fields.first {
             it.type == widgetTokenClass
         }.name
+        val recordSelectedSubtitleMethod = RecordSelectedSubtitleFingerprint.result?.method
+            ?.name ?: throw RecordSelectedSubtitleFingerprint.exception
         val hookInfoProviderClass = context.findClass(
             "Lapp/revanced/bilibili/patches/SubtitleImportSavePatch\$HookInfo;"
         )!!.mutableClass
@@ -139,31 +140,32 @@ object SubtitleImportSavePatch : MultiMethodBytecodePatch(
         val widgetTokenFieldHook = hookInfoProviderClass.fields.first {
             it.name == "widgetTokenField"
         }
-        hookInfoProviderClass.methods.first { it.name == "init" }.also { hookInfoProviderClass.methods.remove(it) }
-            .cloneMutable(registerCount = 1, clearImplementation = true).apply {
-                addInstructions(
-                    0, """
-                    const-string v0, "$getDanmakuParamsMethod"
-                    sput-object v0, $getDanmakuParamsMethodHook
-                    
-                    const-string v0, "$getDmViewReplyMethod"
-                    sput-object v0, $getDmViewReplyMethodHook
-                    
-                    const-string v0, "$setDmViewReplyMethod"
-                    sput-object v0, $setDmViewReplyMethodHook
-                    
-                    const-string v0, "$loadSubtitleMethod"
-                    sput-object v0, $loadSubtitleMethodHook
-                    
-                    const-string v0, "$hideWidgetMethod"
-                    sput-object v0, $hideWidgetMethodHook
-                    
-                    const-string v0, "$widgetTokenField"
-                    sput-object v0, $widgetTokenFieldHook
-                    
-                    return-void
-                """.trimIndent()
-                )
-            }.also { hookInfoProviderClass.methods.add(it) }
+        val recordSelectedSubtitleMethodHook = hookInfoProviderClass.fields.first {
+            it.name == "recordSelectedSubtitleMethod"
+        }
+        hookInfoProviderClass.methods.first { it.name == "init" }.addInstructions(
+            0, """
+            const-string v0, "$getDanmakuParamsMethod"
+            sput-object v0, $getDanmakuParamsMethodHook
+            
+            const-string v0, "$getDmViewReplyMethod"
+            sput-object v0, $getDmViewReplyMethodHook
+            
+            const-string v0, "$setDmViewReplyMethod"
+            sput-object v0, $setDmViewReplyMethodHook
+            
+            const-string v0, "$loadSubtitleMethod"
+            sput-object v0, $loadSubtitleMethodHook
+            
+            const-string v0, "$hideWidgetMethod"
+            sput-object v0, $hideWidgetMethodHook
+            
+            const-string v0, "$widgetTokenField"
+            sput-object v0, $widgetTokenFieldHook
+            
+            const-string v0, "$recordSelectedSubtitleMethod"
+            sput-object v0, $recordSelectedSubtitleMethodHook
+        """.trimIndent()
+        )
     }
 }
